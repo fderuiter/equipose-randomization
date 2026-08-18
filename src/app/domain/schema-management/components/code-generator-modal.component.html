@@ -36,15 +36,15 @@
                       <app-button variant="segmented" (onClick)="setExportMode('STATIC')" [segmentedActive]="exportMode() === 'STATIC'" segmentedPosition="first" role="radio" [ariaChecked]="exportMode() === 'STATIC' ? 'true' : 'false'">
                         Static Manifest
                       </app-button>
-                      <app-button variant="segmented" (onClick)="setExportMode('DYNAMIC')" [segmentedActive]="exportMode() === 'DYNAMIC'" segmentedPosition="middle" role="radio" [ariaChecked]="exportMode() === 'DYNAMIC' ? 'true' : 'false'">
+                      <app-button variant="segmented" (onClick)="setExportMode('DYNAMIC')" [segmentedActive]="exportMode() === 'DYNAMIC'" [disabled]="isMinimization()" segmentedPosition="middle" role="radio" [ariaChecked]="exportMode() === 'DYNAMIC' ? 'true' : 'false'">
                         Dynamic Generator
                       </app-button>
-                      <app-button variant="segmented" (onClick)="setExportMode('BOTH')" [segmentedActive]="exportMode() === 'BOTH'" segmentedPosition="last" role="radio" [ariaChecked]="exportMode() === 'BOTH' ? 'true' : 'false'">                        Both (ZIP Bundle)
+                      <app-button variant="segmented" (onClick)="setExportMode('BOTH')" [segmentedActive]="exportMode() === 'BOTH'" [disabled]="isMinimization()" segmentedPosition="last" role="radio" [ariaChecked]="exportMode() === 'BOTH' ? 'true' : 'false'">                        Both (ZIP Bundle)
                       </app-button>
                     </nav>
-                    @if (isMinimization() && exportMode() === 'STATIC') {
-                      <p class="text-xs text-amber-600 dark:text-amber-400 mt-1 max-w-sm">
-                        A static manifest preserves the generated allocation sequence. Select "Dynamic Generator" to generate a dynamic Pocock-Simon minimization simulation script.
+                    @if (isMinimization()) {
+                      <p class="text-xs text-amber-600 dark:text-amber-400 mt-1 max-w-sm" data-testid="minimization-unsupported-note">
+                        Dynamic export is not yet available for Pocock-Simon minimization. A static manifest preserves the generated allocation sequence.
                       </p>
                     }
                   </div>

@@ -1,4 +1,3 @@
-
 import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { CodeGeneratorModalComponent } from './code-generator-modal.component';
@@ -11,8 +10,9 @@ import { RandomizationConfig } from '../../core/models/randomization.model';
 
 describe('CodeGeneratorModalComponent (domain)', () => {
   let component: CodeGeneratorModalComponent;
-  let mockFacade: unknown;
-  let mockCodeGeneratorService: unknown;
+  let fixture: ComponentFixture<CodeGeneratorModalComponent>;
+  let mockFacade: any;
+  let mockCodeGeneratorService: any;
 
   beforeEach(async () => {
     mockFacade = {
@@ -44,23 +44,22 @@ describe('CodeGeneratorModalComponent (domain)', () => {
       generateDynamic: vi.fn().mockReturnValue('Mock Dynamic Code')
     };
 
-    TestBed.configureTestingModule({
+    await TestBed.configureTestingModule({
+      imports: [CodeGeneratorModalComponent],
       providers: [
         { provide: RandomizationEngineFacade, useValue: mockFacade },
         { provide: CodeGeneratorService, useValue: mockCodeGeneratorService }
       ]
-    });
+    }).compileComponents();
 
-    await TestBed.runInInjectionContext(async () => {
-      component = new CodeGeneratorModalComponent();
-      await component.ngOnInit();
-    });
+    fixture = TestBed.createComponent(CodeGeneratorModalComponent);
+    component = fixture.componentInstance;
   });
 
   describe('when config is fully populated', () => {
     let mockConfig: RandomizationConfig;
 
-    beforeEach(() => {
+    beforeEach(async () => {
       mockConfig = {
         protocolId: 'TEST-123',
         studyName: 'Test Study',
@@ -84,51 +83,54 @@ describe('CodeGeneratorModalComponent (domain)', () => {
         seed: 'test_seed',
         subjectIdMask: '[SiteID]-[StratumCode]-[001]'
       };
-      (mockFacade as any).config.set(mockConfig);
+      mockFacade.config.set(mockConfig);
+      fixture.detectChanges();
+      await fixture.whenStable();
     });
 
     it('should generate valid R code', async () => {
-      (mockCodeGeneratorService as any).generate.mockReturnValue('Mock R Code');
+      mockCodeGeneratorService.generate.mockReturnValue('Mock R Code');
       await component.setActiveTab('R');
       const code = component.currentCode;
-      expect((mockCodeGeneratorService as any).generate).toHaveBeenCalledWith('R', mockConfig, expect.anything());
+      expect(mockCodeGeneratorService.generate).toHaveBeenCalledWith('R', mockConfig, expect.anything());
       expect(code).toBe('Mock R Code');
     });
 
     it('should generate valid Python code', async () => {
-      (mockCodeGeneratorService as any).generate.mockReturnValue('Mock Python Code');
+      mockCodeGeneratorService.generate.mockReturnValue('Mock Python Code');
       await component.setActiveTab('Python');
       const code = component.currentCode;
-      expect((mockCodeGeneratorService as any).generate).toHaveBeenCalledWith('Python', mockConfig, expect.anything());
+      expect(mockCodeGeneratorService.generate).toHaveBeenCalledWith('Python', mockConfig, expect.anything());
       expect(code).toBe('Mock Python Code');
     });
 
     it('should generate valid SAS code', async () => {
-      (mockCodeGeneratorService as any).generate.mockReturnValue('Mock SAS Code');
+      mockCodeGeneratorService.generate.mockReturnValue('Mock SAS Code');
       await component.setActiveTab('SAS');
       const code = component.currentCode;
-      expect((mockCodeGeneratorService as any).generate).toHaveBeenCalledWith('SAS', mockConfig, expect.anything());
+      expect(mockCodeGeneratorService.generate).toHaveBeenCalledWith('SAS', mockConfig, expect.anything());
       expect(code).toBe('Mock SAS Code');
     });
   });
 
   describe('when config properties are undefined', () => {
     beforeEach(() => {
-      (mockFacade as any).config.set(null);
+      mockFacade.config.set(null);
+      fixture.detectChanges();
     });
 
     it('should handle missing config gracefully', async () => {
       await component.setActiveTab('R');
       const code = component.currentCode;
       expect(code).toBe('');
-      expect((mockCodeGeneratorService as any).generate).not.toHaveBeenCalled();
+      expect(mockCodeGeneratorService.generate).not.toHaveBeenCalled();
     });
   });
 
   describe('downloadCode()', () => {
     let mockConfig: RandomizationConfig;
 
-    beforeEach(() => {
+    beforeEach(async () => {
       vi.useFakeTimers();
       globalThis.URL.createObjectURL = vi.fn(() => "mock://url") as unknown as (obj: Blob | MediaSource) => string;
       globalThis.URL.revokeObjectURL = vi.fn() as unknown as (url: string) => void;
@@ -145,7 +147,9 @@ describe('CodeGeneratorModalComponent (domain)', () => {
         seed: 'dl_seed',
         subjectIdMask: '[SiteID]-[001]'
       };
-      (mockFacade as any).config.set(mockConfig);
+      mockFacade.config.set(mockConfig);
+      fixture.detectChanges();
+      await fixture.whenStable();
     });
 
     afterEach(() => {
@@ -154,14 +158,19 @@ describe('CodeGeneratorModalComponent (domain)', () => {
     });
 
     const verifyDownloadFilename = async (language: 'R' | 'SAS' | 'Python' | 'STATA', expectedFilename: string) => {
-      const appendSpy = vi.spyOn(document.body, 'appendChild').mockImplementation((n) => n as Node);
-      vi.spyOn(document.body, 'removeChild').mockImplementation((n) => n as Node);
+      const appendSpy = vi.spyOn(document.body, 'appendChild');
+      const removeSpy = vi.spyOn(document.body, 'removeChild');
 
       await component.setActiveTab(language);
       await component.downloadCode();
 
       const anchorEl = appendSpy.mock.calls[0][0] as HTMLAnchorElement;
       expect(anchorEl.getAttribute('download')).toBe(expectedFilename);
+
+      vi.advanceTimersByTime(100);
+
+      appendSpy.mockRestore();
+      removeSpy.mockRestore();
     };
 
     it('should use randomization_schema.zip as the filename for R code', async () => {
@@ -181,31 +190,38 @@ describe('CodeGeneratorModalComponent (domain)', () => {
     });
 
     it('should call URL.createObjectURL with a Blob', async () => {
-      vi.spyOn(document.body, 'appendChild').mockImplementation((n) => n as Node);
-      vi.spyOn(document.body, 'removeChild').mockImplementation((n) => n as Node);
+      const appendSpy = vi.spyOn(document.body, 'appendChild');
+      const removeSpy = vi.spyOn(document.body, 'removeChild');
 
       await component.setActiveTab('R');
       await component.downloadCode();
 
       expect(globalThis.URL.createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+
+      vi.advanceTimersByTime(100);
+
+      appendSpy.mockRestore();
+      removeSpy.mockRestore();
     });
 
     it('should initiate ZIP file generation when exportMode is BOTH', async () => {
-      const appendSpy = vi.spyOn(document.body, 'appendChild').mockImplementation((n) => n as Node);
-      const removeSpy = vi.spyOn(document.body, 'removeChild').mockImplementation((n) => n as Node);
+      const appendSpy = vi.spyOn(document.body, 'appendChild');
+      const removeSpy = vi.spyOn(document.body, 'removeChild');
       const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
 
       component.exportMode.set('BOTH');
       await component.setActiveTab('R');
       await component.downloadCode();
 
-      expect((mockCodeGeneratorService as any).generateStatic).toHaveBeenCalledWith('R', mockConfig, undefined);
-      expect((mockCodeGeneratorService as any).generateDynamic).toHaveBeenCalledWith('R', mockConfig, undefined);
+      expect(mockCodeGeneratorService.generateStatic).toHaveBeenCalledWith('R', mockConfig, undefined);
+      expect(mockCodeGeneratorService.generateDynamic).toHaveBeenCalledWith('R', mockConfig, undefined);
 
       expect(appendSpy).toHaveBeenCalled();
       const anchorEl = appendSpy.mock.calls[0][0] as HTMLAnchorElement;
       expect(anchorEl.getAttribute('download')).toBe('randomization_schema_bundle.zip');
       expect(clickSpy).toHaveBeenCalled();
+
+      vi.advanceTimersByTime(100);
 
       appendSpy.mockRestore();
       removeSpy.mockRestore();
@@ -229,8 +245,9 @@ describe('CodeGeneratorModalComponent (domain)', () => {
         seed: 'copy_seed',
         subjectIdMask: '[SiteID]-[001]'
       };
-      (mockFacade as any).config.set(mockConfig);
-      (mockCodeGeneratorService as any).generate.mockReturnValue('Mock R Code');
+      mockFacade.config.set(mockConfig);
+      mockCodeGeneratorService.generate.mockReturnValue('Mock R Code');
+      fixture.detectChanges();
       await component.setActiveTab('R');
     });
 
@@ -261,7 +278,7 @@ describe('CodeGeneratorModalComponent (domain)', () => {
   describe('error handling', () => {
     let mockConfig: RandomizationConfig;
 
-    beforeEach(() => {
+    beforeEach(async () => {
       mockConfig = {
         protocolId: 'ERR-TEST',
         studyName: 'Error Test',
@@ -274,12 +291,14 @@ describe('CodeGeneratorModalComponent (domain)', () => {
         seed: 'err_seed',
         subjectIdMask: '[SiteID]-[001]'
       };
-      (mockFacade as any).config.set(mockConfig);
+      mockFacade.config.set(mockConfig);
+      fixture.detectChanges();
+      await fixture.whenStable();
     });
 
     it('should set errorState when the code generator throws a CodeGenerationError', async () => {
       const codeGenErr = new CodeGenerationError('Specific failure', mockConfig);
-      (mockCodeGeneratorService as any).generate.mockImplementation(() => { throw codeGenErr; });
+      mockCodeGeneratorService.generate.mockImplementation(() => { throw codeGenErr; });
 
       await component.setActiveTab('R');
 
@@ -288,7 +307,7 @@ describe('CodeGeneratorModalComponent (domain)', () => {
     });
 
     it('should wrap non-CodeGenerationError exceptions in a CodeGenerationError', async () => {
-      (mockCodeGeneratorService as any).generate.mockImplementation(() => {
+      mockCodeGeneratorService.generate.mockImplementation(() => {
         throw new Error('raw failure');
       });
 
@@ -300,11 +319,11 @@ describe('CodeGeneratorModalComponent (domain)', () => {
     });
 
     it('should clear errorState and show code when switching to a tab that succeeds', async () => {
-      (mockCodeGeneratorService as any).generate.mockImplementationOnce(() => { throw new CodeGenerationError('bad', mockConfig); });
+      mockCodeGeneratorService.generate.mockImplementationOnce(() => { throw new CodeGenerationError('bad', mockConfig); });
       await component.setActiveTab('R');
       expect(component.errorState()).not.toBeNull();
 
-      (mockCodeGeneratorService as any).generate.mockReturnValue('Good SAS code');
+      mockCodeGeneratorService.generate.mockReturnValue('Good SAS code');
       await component.setActiveTab('SAS');
       expect(component.errorState()).toBeNull();
       expect(component.currentCode).toBe('Good SAS code');
@@ -312,7 +331,7 @@ describe('CodeGeneratorModalComponent (domain)', () => {
 
     it('should copy a copyable, redacted JSON diagnostics payload replacing sensitive values with explicit redaction markers', async () => {
       const codeGenErr = new CodeGenerationError('Specific failure', mockConfig);
-      (mockCodeGeneratorService as any).generate.mockImplementation(() => { throw codeGenErr; });
+      mockCodeGeneratorService.generate.mockImplementation(() => { throw codeGenErr; });
       await component.setActiveTab('R');
 
       const clipboardWriteSpy = vi.fn().mockResolvedValue(undefined);
@@ -338,7 +357,8 @@ describe('CodeGeneratorModalComponent (domain)', () => {
   describe('Pocock-Simon Minimization specific behavior', () => {
     let minConfig: RandomizationConfig;
 
-    beforeEach(() => {
+    beforeEach(async () => {
+      vi.useFakeTimers();
       minConfig = {
         protocolId: 'MIN-TEST',
         studyName: 'Minimization Study',
@@ -353,34 +373,54 @@ describe('CodeGeneratorModalComponent (domain)', () => {
         randomizationMethod: 'MINIMIZATION',
         minimizationConfig: { p: 0.8, totalSampleSize: 100 }
       };
-      (mockFacade as any).config.set(minConfig);
+      mockFacade.config.set(minConfig);
+      fixture.detectChanges();
+      await fixture.whenStable();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
     });
 
     it('should detect minimization and set isMinimization to true', () => {
       expect(component.isMinimization()).toBe(true);
     });
 
-    it('should not normalize exportMode to STATIC on initialization for minimization', async () => {
+    it('should normalize exportMode to STATIC on initialization for minimization', async () => {
       component.exportMode.set('DYNAMIC');
       await component.ngOnInit();
-      expect(component.exportMode()).toBe('DYNAMIC');
+      expect(component.exportMode()).toBe('STATIC');
     });
 
-    it('should allow switching exportMode away from STATIC when isMinimization is true', async () => {
+    it('should NOT allow switching exportMode away from STATIC when isMinimization is true', async () => {
       await component.ngOnInit();
       expect(component.exportMode()).toBe('STATIC');
 
       await component.setExportMode('DYNAMIC');
-      expect(component.exportMode()).toBe('DYNAMIC');
+      expect(component.exportMode()).toBe('STATIC');
 
       await component.setExportMode('BOTH');
-      expect(component.exportMode()).toBe('BOTH');
+      expect(component.exportMode()).toBe('STATIC');
+    });
+
+    it('should fall back to STATIC in downloadCode for minimization', async () => {
+      component.exportMode.set('DYNAMIC');
+      const appendSpy = vi.spyOn(document.body, 'appendChild');
+      const removeSpy = vi.spyOn(document.body, 'removeChild');
+      globalThis.URL.createObjectURL = vi.fn(() => "mock://url") as unknown as (obj: Blob | MediaSource) => string;
+      globalThis.URL.revokeObjectURL = vi.fn() as unknown as (url: string) => void;
+
+      await component.downloadCode();
+      expect(component.exportMode()).toBe('STATIC');
+
+      vi.advanceTimersByTime(100);
+
+      appendSpy.mockRestore();
+      removeSpy.mockRestore();
     });
   });
 
-  describe('PRNG Sequence Parity Warning Banner Rendering', () => {
-    let fixture: ComponentFixture<CodeGeneratorModalComponent>;
-    let renderedComponent: CodeGeneratorModalComponent;
+  describe('PRNG Sequence Parity Warning Banner Rendering (DOM)', () => {
     let mockConfig: RandomizationConfig;
 
     beforeEach(async () => {
@@ -399,15 +439,13 @@ describe('CodeGeneratorModalComponent (domain)', () => {
         seed: 'banner_seed',
         subjectIdMask: '[SiteID]-[001]'
       };
-      (mockFacade as any).config.set(mockConfig);
-
-      fixture = TestBed.createComponent(CodeGeneratorModalComponent);
-      renderedComponent = fixture.componentInstance;
+      mockFacade.config.set(mockConfig);
       fixture.detectChanges();
+      await fixture.whenStable();
     });
 
     it('should render warning banner when activeTab is SAS', async () => {
-      renderedComponent.activeTab.set('SAS');
+      component.activeTab.set('SAS');
       fixture.detectChanges();
       const banner = fixture.debugElement.query(By.css('[data-testid="parity-warning-banner"]'));
       expect(banner).not.toBeNull();
@@ -416,7 +454,7 @@ describe('CodeGeneratorModalComponent (domain)', () => {
     });
 
     it('should render warning banner when activeTab is STATA', async () => {
-      renderedComponent.activeTab.set('STATA');
+      component.activeTab.set('STATA');
       fixture.detectChanges();
       const banner = fixture.debugElement.query(By.css('[data-testid="parity-warning-banner"]'));
       expect(banner).not.toBeNull();
@@ -425,23 +463,21 @@ describe('CodeGeneratorModalComponent (domain)', () => {
     });
 
     it('should NOT render warning banner when activeTab is R', async () => {
-      renderedComponent.activeTab.set('R');
+      component.activeTab.set('R');
       fixture.detectChanges();
       const banner = fixture.debugElement.query(By.css('[data-testid="parity-warning-banner"]'));
       expect(banner).toBeNull();
     });
 
     it('should NOT render warning banner when activeTab is Python', async () => {
-      renderedComponent.activeTab.set('Python');
+      component.activeTab.set('Python');
       fixture.detectChanges();
       const banner = fixture.debugElement.query(By.css('[data-testid="parity-warning-banner"]'));
       expect(banner).toBeNull();
     });
   });
 
-  describe('Concurrency Warning Banner Rendering', () => {
-    let fixture: ComponentFixture<CodeGeneratorModalComponent>;
-    let renderedComponent: CodeGeneratorModalComponent;
+  describe('Minimization unsupported note and disabled options (DOM)', () => {
     let mockConfig: RandomizationConfig;
 
     beforeEach(async () => {
@@ -461,27 +497,28 @@ describe('CodeGeneratorModalComponent (domain)', () => {
         seed: 'banner_seed_min',
         subjectIdMask: '[SiteID]-[001]'
       };
-      (mockFacade as any).config.set(mockConfig);
-
-      fixture = TestBed.createComponent(CodeGeneratorModalComponent);
-      renderedComponent = fixture.componentInstance;
+      mockFacade.config.set(mockConfig);
       fixture.detectChanges();
+      await fixture.whenStable();
     });
 
-    it('should render concurrency warning banner when exportMode is DYNAMIC', async () => {
-      renderedComponent.exportMode.set('DYNAMIC');
-      fixture.detectChanges();
-      const banner = fixture.debugElement.query(By.css('[data-testid="concurrency-warning-banner"]'));
-      expect(banner).not.toBeNull();
-      const text = banner.query(By.css('[data-testid="concurrency-warning-text"]')).nativeElement.textContent;
-      expect(text).toContain('runs sequentially and requires proper synchronization');
+    it('should render minimization unsupported note', async () => {
+      const note = fixture.debugElement.query(By.css('[data-testid="minimization-unsupported-note"]'));
+      expect(note).not.toBeNull();
+      expect(note.nativeElement.textContent).toContain('Dynamic export is not yet available');
     });
 
-    it('should NOT render concurrency warning banner when exportMode is STATIC', async () => {
-      renderedComponent.exportMode.set('STATIC');
-      fixture.detectChanges();
-      const banner = fixture.debugElement.query(By.css('[data-testid="concurrency-warning-banner"]'));
-      expect(banner).toBeNull();
+    it('should disable Dynamic and Both buttons', async () => {
+      const buttons = fixture.debugElement.queryAll(By.css('app-button[variant="segmented"]'));
+      // The buttons in nav are: Static, Dynamic, Both (segmented) and R, SAS, Python, Stata (segmented tablist)
+      // Dynamic button should be disabled, Both button should be disabled
+      const dynamicBtn = buttons.find(b => b.nativeElement.textContent.includes('Dynamic Generator'));
+      const bothBtn = buttons.find(b => b.nativeElement.textContent.includes('Both (ZIP Bundle)'));
+      const staticBtn = buttons.find(b => b.nativeElement.textContent.includes('Static Manifest'));
+
+      expect(dynamicBtn?.componentInstance.disabled).toBe(true);
+      expect(bothBtn?.componentInstance.disabled).toBe(true);
+      expect(staticBtn?.componentInstance.disabled).toBe(false);
     });
   });
 });

@@ -1,6 +1,6 @@
 # Validation Traceability Matrix
 
-> **Generated:** 2026-08-13T15:02:54.350Z  
+> **Generated:** 2026-08-13T20:29:25.827Z
 > **Status:** Test results not provided — status shown as UNKNOWN  
 > **Requirements covered:** 14 / 16  
 > **Tagged test cases:** 39  
