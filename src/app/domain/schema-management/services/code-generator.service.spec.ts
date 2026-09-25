@@ -321,4 +321,42 @@ describe('CodeGeneratorService Dual-Mode', () => {
       expect(code).toContain('WARNING: SEQUENCE-PARITY & MULTI-USER INTEGRATION SAFETY');
     });
   });
+
+  describe('Zero-Ratio Arms Code Export & Pre-flight Guards', () => {
+    const zeroRatioConfig: RandomizationConfig = {
+      ...minimizationConfig,
+      arms: [
+        { id: 'A', name: 'Active Arm', ratio: 1 },
+        { id: 'B', name: 'Observational Arm', ratio: 0 }
+      ]
+    };
+
+    it('should generate valid dynamic minimization scripts for Python, R, SAS, and STATA when zero-ratio arms exist', () => {
+      const pyCode = service.generateDynamic('Python', zeroRatioConfig);
+      expect(pyCode).toContain('active_candidates = [a for a in candidates if a["ratio"] > 0]');
+      expect(pyCode).toContain('active_arms = [a for a in arms if a["ratio"] > 0]');
+
+      const rCode = service.generateDynamic('R', zeroRatioConfig);
+      expect(rCode).toContain('active_candidates <- Filter(function(a) a$ratio > 0, candidates)');
+      expect(rCode).toContain('active_arms <- Filter(function(a) a$ratio > 0, arms)');
+
+      const sasCode = service.generateDynamic('SAS', zeroRatioConfig);
+      expect(sasCode).toContain('if arm_ratios[arm_idx] > 0 then do;');
+
+      const stataCode = service.generateDynamic('STATA', zeroRatioConfig);
+      expect(stataCode).toContain('active_candidates = active_candidates, candidates_indices[i]');
+    });
+
+    it('should trigger pre-flight validation error when all arm ratios are zero before code emission', () => {
+      const allZeroConfig: RandomizationConfig = {
+        ...minimizationConfig,
+        arms: [
+          { id: 'A', name: 'Arm A', ratio: 0 },
+          { id: 'B', name: 'Arm B', ratio: 0 }
+        ]
+      };
+
+      expect(() => service.generateDynamic('Python', allZeroConfig)).toThrow();
+    });
+  });
 });

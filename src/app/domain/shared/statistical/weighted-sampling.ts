@@ -66,17 +66,18 @@ export function sampleLevel(
 }
 
 export function selectWeightedArm<T extends { ratio: number }>(candidates: T[], rng: () => number): T {
-  const totalWeight = candidates.reduce((sum, arm) => sum + arm.ratio, 0);
+  const activeCandidates = candidates.filter(arm => arm.ratio > 0);
+  const totalWeight = activeCandidates.reduce((sum, arm) => sum + arm.ratio, 0);
   if (totalWeight === 0) {
     throw new Error('Total weight of tied arms is 0. Cannot select an arm.');
   }
 
   let rVal = Math.floor(rng() * totalWeight);
-  for (const arm of candidates) {
+  for (const arm of activeCandidates) {
     rVal -= arm.ratio;
     if (rVal < 0) {
       return arm;
     }
   }
-  return candidates[candidates.length - 1];
+  return activeCandidates[activeCandidates.length - 1];
 }

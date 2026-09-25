@@ -56,4 +56,29 @@ describe('UnifiedValidationAuthority - Seed Validation', () => {
     expect(errors.some(e => e.code === 'ERR_SEED_LENGTH')).toBe(true);
     expect(errors.some(e => e.code === 'ERR_SEED_ALPHANUMERIC')).toBe(true);
   });
+
+  it('should accept configurations with individual zero-ratio arms if active positive ratio exists', () => {
+    const config: Partial<RandomizationConfig> = {
+      arms: [
+        { id: 'A', name: 'Active', ratio: 1 },
+        { id: 'B', name: 'Observational', ratio: 0 }
+      ],
+      blockSizes: [2]
+    };
+    const errors = UnifiedValidationAuthority.validate(config);
+    expect(errors).toEqual([]);
+  });
+
+  it('should fail with ERR_RATIO_ZERO when all arm ratios are zero', () => {
+    const config: Partial<RandomizationConfig> = {
+      arms: [
+        { id: 'A', name: 'Arm A', ratio: 0 },
+        { id: 'B', name: 'Arm B', ratio: 0 }
+      ],
+      blockSizes: [2]
+    };
+    const errors = UnifiedValidationAuthority.validate(config);
+    expect(errors.length).toBe(1);
+    expect(errors[0].code).toBe('ERR_RATIO_ZERO');
+  });
 });

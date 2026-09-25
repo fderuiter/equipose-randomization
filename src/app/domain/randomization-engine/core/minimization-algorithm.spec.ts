@@ -262,6 +262,27 @@ describe('Minimization Algorithm - Detailed Fixes', () => {
      const rng = seedRng('probtest_zero_ratio');
      expect(() => generateMinimization(configZeroRatio, rng, new SubjectRegistry(configZeroRatio))).toThrow();
   });
+
+  it('should exclude zero-ratio arms from minimization allocation and assign subjects only to positive-ratio arms', () => {
+     const configWithZeroRatioArm: RandomizationConfig = {
+        ...customConfig,
+        arms: [
+          { id: 'A', name: 'Active Arm A', ratio: 1 },
+          { id: 'B', name: 'Active Arm B', ratio: 1 },
+          { id: 'C', name: 'Observational Arm C', ratio: 0 }
+        ],
+        minimizationConfig: { p: 0.8, totalSampleSize: 50 }
+     };
+     const rng = seedRng('zero_ratio_minimization');
+     const schema = generateMinimization(configWithZeroRatioArm, rng, new SubjectRegistry(configWithZeroRatioArm));
+
+     expect(schema.length).toBe(50);
+     const assignedC = schema.filter(s => s.treatmentArmId === 'C');
+     expect(assignedC.length).toBe(0);
+     const assignedA = schema.filter(s => s.treatmentArmId === 'A');
+     const assignedB = schema.filter(s => s.treatmentArmId === 'B');
+     expect(assignedA.length + assignedB.length).toBe(50);
+  });
 });
 
   describe('Regression Prevention Tests', () => {

@@ -194,15 +194,16 @@ def sample_level(levels, expected_probs):
     return levels[-1]
 
 def select_weighted_arm(candidates):
-    total_weight = sum(a["ratio"] for a in candidates)
+    active_candidates = [a for a in candidates if a["ratio"] > 0]
+    total_weight = sum(a["ratio"] for a in active_candidates)
     if total_weight == 0:
         raise ValueError("Total weight of tied arms is 0.")
     r_val = int(get_rand() * total_weight)
-    for arm in candidates:
+    for arm in active_candidates:
         r_val -= arm["ratio"]
         if r_val < 0:
             return arm
-    return candidates[-1]
+    return active_candidates[-1]
 
 def get_intersection_key(stratum):
     keys = sorted(stratum.keys())
@@ -247,6 +248,7 @@ for site in sites:
 
 def compute_imbalance_score(candidate_arm_id, site, subject_profile):
     total_score = 0
+    active_arms = [a for a in arms if a["ratio"] > 0]
     for f in strata:
         lvl = subject_profile.get(f)
         if lvl is None: continue
@@ -255,7 +257,7 @@ def compute_imbalance_score(candidate_arm_id, site, subject_profile):
 
         min_val = None
         max_val = None
-        for arm in arms:
+        for arm in active_arms:
             arm_id = arm["id"]
             validate_attributes(site, f, lvl, arm_id)
             count = marginals[site][f][lvl][arm_id]
@@ -336,9 +338,10 @@ for s_idx in range(total_sample_size):
     # Thread-safe critical section for marginal state lookup and update
     with lock:
         # Calculate imbalance scores
+        active_arms = [a for a in arms if a["ratio"] > 0]
         arm_scores = []
         min_score = None
-        for arm in arms:
+        for arm in active_arms:
             score = compute_imbalance_score(arm["id"], site, subject_profile)
             arm_scores.append(score)
             if min_score is None or score < min_score:
@@ -346,14 +349,14 @@ for s_idx in range(total_sample_size):
 
         preferred = []
         non_preferred = []
-        for i, arm in enumerate(arms):
+        for i, arm in enumerate(active_arms):
             if arm_scores[i] == min_score:
                 preferred.append(arm)
             else:
                 non_preferred.append(arm)
 
         r = -1
-        if len(preferred) == len(arms) or not non_preferred:
+        if len(preferred) == len(active_arms) or not non_preferred:
             assigned_arm = select_weighted_arm(preferred)
         else:
             r = int(get_rand() * PRECISION_SCALE)
@@ -394,8 +397,8 @@ for s_idx in range(total_sample_size):
         row.update(subject_profile)
         schema.append(row)
 
-        arm_scores_str = "; ".join(f"{arm['name']}:{arm_scores[i]}" for i, arm in enumerate(arms))
-        preferred_prob = "1.0" if (len(preferred) == len(arms) or not non_preferred) else str(p_minimization)
+        arm_scores_str = "; ".join(f"{arm['name']}:{arm_scores[i]}" for i, arm in enumerate(active_arms))
+        preferred_prob = "1.0" if (len(preferred) == len(active_arms) or not non_preferred) else str(p_minimization)
         rand_val_scaled = str(r / PRECISION_SCALE) if r >= 0 else "1.0"
         audit_row = {
             "SubjectID": subj_id,
@@ -522,18 +525,19 @@ sample_level <- function(levels, expected_probs) {
 }
 
 select_weighted_arm <- function(candidates) {
-  total_weight <- sum(sapply(candidates, function(a) a$ratio))
+  active_candidates <- Filter(function(a) a$ratio > 0, candidates)
+  total_weight <- sum(sapply(active_candidates, function(a) a$ratio))
   if (total_weight == 0) {
     stop("Total weight of tied arms is 0.")
   }
   r_val <- floor((random_int() / 4294967296) * total_weight)
-  for (arm in candidates) {
+  for (arm in active_candidates) {
     r_val <- r_val - arm$ratio
     if (r_val < 0) {
       return(arm)
     }
   }
-  return(candidates[[length(candidates)]])
+  return(active_candidates[[length(active_candidates)]])
 }
 
 get_safe_nested <- function(env, keys, error_msg) {
@@ -613,6 +617,7 @@ for (site in sites) {
 
 compute_imbalance_score <- function(candidate_arm_id, site, subject_profile) {
   total_score <- 0
+  active_arms <- Filter(function(a) a$ratio > 0, arms)
   for (f in names(strata)) {
     lvl <- subject_profile[[f]]
     if (is.null(lvl)) next
@@ -621,7 +626,7 @@ compute_imbalance_score <- function(candidate_arm_id, site, subject_profile) {
 
     min_val <- NULL
     max_val <- NULL
-    for (arm in arms) {
+    for (arm in active_arms) {
       validate_attributes(site, f, lvl, arm$id)
       count <- get_safe_nested(marginals, c(site, f, lvl, arm$id), "Strata key not found")
       if (arm$id == candidate_arm_id) {
@@ -735,10 +740,11 @@ for (s_idx in seq_len(total_sample_size)) {
   }
 
   # Calculate imbalance scores
+  active_arms <- Filter(function(a) a$ratio > 0, arms)
   arm_scores <- c()
   min_score <- NULL
-  for (i in seq_along(arms)) {
-    score <- compute_imbalance_score(arms[[i]]$id, site, subject_profile)
+  for (i in seq_along(active_arms)) {
+    score <- compute_imbalance_score(active_arms[[i]]$id, site, subject_profile)
     arm_scores <- c(arm_scores, score)
     if (is.null(min_score) || score < min_score) {
       min_score <- score
@@ -747,17 +753,17 @@ for (s_idx in seq_len(total_sample_size)) {
 
   preferred <- list()
   non_preferred <- list()
-  for (i in seq_along(arms)) {
+  for (i in seq_along(active_arms)) {
     if (arm_scores[i] == min_score) {
-      preferred[[length(preferred) + 1]] <- arms[[i]]
+      preferred[[length(preferred) + 1]] <- active_arms[[i]]
     } else {
-      non_preferred[[length(non_preferred) + 1]] <- arms[[i]]
+      non_preferred[[length(non_preferred) + 1]] <- active_arms[[i]]
     }
   }
 
   assigned_arm <- NULL
   r <- -1
-  if (length(preferred) == length(arms) || length(non_preferred) == 0) {
+  if (length(preferred) == length(active_arms) || length(non_preferred) == 0) {
     assigned_arm <- select_weighted_arm(preferred)
   } else {
     r <- floor((random_int() / 4294967296) * PRECISION_SCALE)
@@ -805,8 +811,8 @@ for (s_idx in seq_len(total_sample_size)) {
   }
   schema_list[[length(schema_list) + 1]] <- row_df
 
-  arm_scores_str <- paste(sapply(seq_along(arms), function(i) paste0(arms[[i]]$name, ":", arm_scores[i])), collapse="; ")
-  preferred_prob <- if (length(preferred) == length(arms) || length(non_preferred) == 0) "1.0" else as.character(p_minimization)
+  arm_scores_str <- paste(sapply(seq_along(active_arms), function(i) paste0(active_arms[[i]]$name, ":", arm_scores[i])), collapse="; ")
+  preferred_prob <- if (length(preferred) == length(active_arms) || length(non_preferred) == 0) "1.0" else as.character(p_minimization)
   rand_val_scaled <- if (r >= 0) as.character(r / PRECISION_SCALE) else "1.0"
   audit_row <- data.frame(
     SubjectID = subj_id,
@@ -1040,53 +1046,59 @@ if (!is.null(audit_trail_df)) {
     /* 4. Calculate imbalance scores */
     min_score = 99999999;
     do arm_idx = 1 to ${A};
-      total_score = 0;
-      do f_i = 1 to ${F};
-        lvl_i = subject_profile[f_i];
+      if arm_ratios[arm_idx] > 0 then do;
+        total_score = 0;
+        do f_i = 1 to ${F};
+          lvl_i = subject_profile[f_i];
 
-        min_val = 99999999;
-        max_val = -99999999;
-        do a_i = 1 to ${A};
-          h_site_idx = site_idx;
-          h_f_idx = f_i;
-          h_lvl_idx = lvl_i;
-          h_arm_idx = a_i;
-          if h_site_idx < 1 or h_site_idx > ${S} or h_f_idx < 1 or h_f_idx > ${F} or h_lvl_idx < 1 or h_lvl_idx > ${L_max} or h_arm_idx < 1 or h_arm_idx > ${A} then do;
-             h_count = 0;
-          end;
-          else do;
-             rc = marginals_hash.find();
-             if rc ne 0 then h_count = 0;
-          end;
-          count = h_count;
-          if a_i = arm_idx then count = count + 1;
+          min_val = 99999999;
+          max_val = -99999999;
+          do a_i = 1 to ${A};
+            if arm_ratios[a_i] > 0 then do;
+              h_site_idx = site_idx;
+              h_f_idx = f_i;
+              h_lvl_idx = lvl_i;
+              h_arm_idx = a_i;
+              if h_site_idx < 1 or h_site_idx > ${S} or h_f_idx < 1 or h_f_idx > ${F} or h_lvl_idx < 1 or h_lvl_idx > ${L_max} or h_arm_idx < 1 or h_arm_idx > ${A} then do;
+                 h_count = 0;
+              end;
+              else do;
+                 rc = marginals_hash.find();
+                 if rc ne 0 then h_count = 0;
+              end;
+              count = h_count;
+              if a_i = arm_idx then count = count + 1;
 
-          normalized_count = count * ratio_multipliers[a_i];
-          if normalized_count < min_val then min_val = normalized_count;
-          if normalized_count > max_val then max_val = normalized_count;
+              normalized_count = count * ratio_multipliers[a_i];
+              if normalized_count < min_val then min_val = normalized_count;
+              if normalized_count > max_val then max_val = normalized_count;
+            end;
+          end;
+          total_score = total_score + (max_val - min_val);
         end;
-        total_score = total_score + (max_val - min_val);
+        arm_scores[arm_idx] = total_score;
+        if total_score < min_score then min_score = total_score;
       end;
-      arm_scores[arm_idx] = total_score;
-      if total_score < min_score then min_score = total_score;
     end;
 
     num_preferred = 0;
     num_non_preferred = 0;
     do arm_idx = 1 to ${A};
-      if arm_scores[arm_idx] = min_score then do;
-        num_preferred = num_preferred + 1;
-        preferred_arms[num_preferred] = arm_idx;
-      end;
-      else do;
-        num_non_preferred = num_non_preferred + 1;
-        non_preferred_arms[num_non_preferred] = arm_idx;
+      if arm_ratios[arm_idx] > 0 then do;
+        if arm_scores[arm_idx] = min_score then do;
+          num_preferred = num_preferred + 1;
+          preferred_arms[num_preferred] = arm_idx;
+        end;
+        else do;
+          num_non_preferred = num_non_preferred + 1;
+          non_preferred_arms[num_non_preferred] = arm_idx;
+        end;
       end;
     end;
 
     r = -1;
     assigned_arm_idx = 1;
-    if num_preferred = ${A} or num_non_preferred = 0 then do;
+    if num_preferred = ${arms.filter(a => a.ratio > 0).length} or num_non_preferred = 0 then do;
       total_weight = 0;
       do i = 1 to num_preferred;
         total_weight = total_weight + arm_ratios[preferred_arms[i]];
@@ -1231,7 +1243,7 @@ ${armNamesMapping}
       else ImbalanceScores = trim(ImbalanceScores) || "; " || trim(temp_arm_name) || ":" || trim(left(score_str));
     end;
 
-    if num_preferred = ${A} or num_non_preferred = 0 then PreferredArmProb = "1.0";
+    if num_preferred = ${arms.filter(a => a.ratio > 0).length} or num_non_preferred = 0 then PreferredArmProb = "1.0";
     else PreferredArmProb = put(&p_minimization, 8.4);
 
     if r < 0 then RandomValue = "1.0";
@@ -1357,20 +1369,27 @@ ${armNamesMapping}
 
   real scalar select_weighted_arm(real rowvector candidates_indices) {
     real scalar total_weight, i, r_val, arm_idx
-    total_weight = 0
+    real rowvector active_candidates
+    active_candidates = J(1, 0, 0)
     for (i=1; i<=cols(candidates_indices); i++) {
-      total_weight = total_weight + arm_ratios[candidates_indices[i]]
+      if (arm_ratios[candidates_indices[i]] > 0) {
+        active_candidates = active_candidates, candidates_indices[i]
+      }
+    }
+    total_weight = 0
+    for (i=1; i<=cols(active_candidates); i++) {
+      total_weight = total_weight + arm_ratios[active_candidates[i]]
     }
     if (total_weight == 0) {
       exit(error(119))
     }
     r_val = trunc((random_int() / 4294967296) * total_weight)
-    for (i=1; i<=cols(candidates_indices); i++) {
-      arm_idx = candidates_indices[i]
+    for (i=1; i<=cols(active_candidates); i++) {
+      arm_idx = active_candidates[i]
       r_val = r_val - arm_ratios[arm_idx]
       if (r_val < 0) return(arm_idx)
     }
-    return(candidates_indices[cols(candidates_indices)])
+    return(active_candidates[cols(active_candidates)])
   }
 
   string scalar get_intersection_key(string rowvector stratum) {
@@ -1427,14 +1446,16 @@ ${armNamesMapping}
       min_val = .
       max_val = .
       for (a_idx=1; a_idx<=cols(arms); a_idx++) {
-        key = site + "|" + strofreal(f_idx) + "|" + lvl + "|" + arm_ids[a_idx]
-        count = asarray(marginals, key)
-        if (a_idx == candidate_arm_idx) {
-          count = count + 1
+        if (arm_ratios[a_idx] > 0) {
+          key = site + "|" + strofreal(f_idx) + "|" + lvl + "|" + arm_ids[a_idx]
+          count = asarray(marginals, key)
+          if (a_idx == candidate_arm_idx) {
+            count = count + 1
+          }
+          normalized_count = count * asarray(ratio_multipliers, arm_ids[a_idx])
+          if (min_val == . | normalized_count < min_val) min_val = normalized_count
+          if (max_val == . | normalized_count > max_val) max_val = normalized_count
         }
-        normalized_count = count * asarray(ratio_multipliers, arm_ids[a_idx])
-        if (min_val == . | normalized_count < min_val) min_val = normalized_count
-        if (max_val == . | normalized_count > max_val) max_val = normalized_count
       }
       if (min_val != . & max_val != .) {
         total_score = total_score + (max_val - min_val)
@@ -1538,9 +1559,15 @@ ${armNamesMapping}
       break
     }
 
+    active_arm_indices = J(1, 0, 0)
+    for (a_i=1; a_i<=cols(arms); a_i++) {
+      if (arm_ratios[a_i] > 0) active_arm_indices = active_arm_indices, a_i
+    }
+
     arm_scores = J(1, cols(arms), 0)
     min_score = .
-    for (arm_idx=1; arm_idx<=cols(arms); arm_idx++) {
+    for (i=1; i<=cols(active_arm_indices); i++) {
+      arm_idx = active_arm_indices[i]
       score = compute_imbalance_score(arm_idx, site, subject_profile)
       arm_scores[arm_idx] = score
       if (min_score == . | score < min_score) {
@@ -1550,7 +1577,8 @@ ${armNamesMapping}
 
     preferred_indices = J(1, 0, 0)
     non_preferred_indices = J(1, 0, 0)
-    for (arm_idx=1; arm_idx<=cols(arms); arm_idx++) {
+    for (i=1; i<=cols(active_arm_indices); i++) {
+      arm_idx = active_arm_indices[i]
       if (arm_scores[arm_idx] == min_score) {
         preferred_indices = preferred_indices, arm_idx
       } else {
@@ -1559,7 +1587,7 @@ ${armNamesMapping}
     }
 
     r = -1
-    if (cols(preferred_indices) == cols(arms) | cols(non_preferred_indices) == 0) {
+    if (cols(preferred_indices) == cols(active_arm_indices) | cols(non_preferred_indices) == 0) {
       assigned_arm_idx = select_weighted_arm(preferred_indices)
     } else {
       r = trunc((random_int() / 4294967296) * ${PRECISION_SCALE})
@@ -1595,9 +1623,10 @@ ${armNamesMapping}
     schema_out = schema_out \\ row_res
 
     imbalance_scores_str = ""
-    for (arm_i=1; arm_i<=cols(arms); arm_i++) {
-      score_val = arm_scores[arm_i]
-      arm_name = arms[arm_i]
+    for (arm_i=1; arm_i<=cols(active_arm_indices); arm_i++) {
+      arm_idx = active_arm_indices[arm_i]
+      score_val = arm_scores[arm_idx]
+      arm_name = arms[arm_idx]
       if (imbalance_scores_str == "") {
         imbalance_scores_str = arm_name + ":" + strofreal(score_val)
       } else {
@@ -1606,7 +1635,7 @@ ${armNamesMapping}
     }
     
     pref_prob_str = "1.0"
-    if (cols(preferred_indices) != cols(arms) & cols(non_preferred_indices) > 0) {
+    if (cols(preferred_indices) != cols(active_arm_indices) & cols(non_preferred_indices) > 0) {
       pref_prob_str = strofreal(p_minimization)
     }
     

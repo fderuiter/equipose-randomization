@@ -9,7 +9,7 @@ import { MathUtil } from '../../core/utils/math.util';
 
 function computeImbalanceScore(
   candidateArmId: string,
-  arms: TreatmentArm[],
+  activeArms: TreatmentArm[],
   subjectProfile: Record<string, string>,
   marginals: Map<string, Map<string, Map<string, number>>>,
   strata: { id: string }[],
@@ -31,7 +31,7 @@ function computeImbalanceScore(
 
     let min: number | null = null;
     let max: number | null = null;
-    for (const arm of arms) {
+    for (const arm of activeArms) {
       const count = (levelMarginals.get(arm.id) ?? 0) + (arm.id === candidateArmId ? 1 : 0);
       const mult = ratioMultipliers.get(arm.id) ?? 1;
       const normalizedCount = count * mult;
@@ -116,11 +116,14 @@ export function generateMinimization(
     }
   }
 
+  const activeArms = arms.filter(a => a.ratio > 0);
+  if (activeArms.length === 0) {
+    throw new Error('At least one treatment arm must have a positive allocation ratio.');
+  }
+
   let armRatioLcm = 1;
-  for (const arm of arms) {
-    if (arm.ratio > 0) {
-      armRatioLcm = MathUtil.lcm(armRatioLcm, arm.ratio);
-    }
+  for (const arm of activeArms) {
+    armRatioLcm = MathUtil.lcm(armRatioLcm, arm.ratio);
   }
   const ratioMultipliers = new Map<string, number>();
   for (const arm of arms) {
@@ -299,16 +302,16 @@ export function generateMinimization(
 
     let minScore: number | null = null;
     const armScores: number[] = [];
-    for (const arm of arms) {
-      const score = computeImbalanceScore(arm.id, arms, subjectProfile, marginals, strata, ratioMultipliers);
+    for (const arm of activeArms) {
+      const score = computeImbalanceScore(arm.id, activeArms, subjectProfile, marginals, strata, ratioMultipliers);
       armScores.push(score);
       if (minScore === null || score < minScore) minScore = score;
     }
 
     const preferred: TreatmentArm[] = [];
     const nonPreferred: TreatmentArm[] = [];
-    for (let j = 0; j < arms.length; j++) {
-      const arm = arms[j];
+    for (let j = 0; j < activeArms.length; j++) {
+      const arm = activeArms[j];
       if (armScores[j] === minScore!) {
         preferred.push(arm);
       } else {
@@ -318,7 +321,7 @@ export function generateMinimization(
 
     let assignedArm: TreatmentArm;
 
-    if (preferred.length === arms.length || nonPreferred.length === 0) {
+    if (preferred.length === activeArms.length || nonPreferred.length === 0) {
       assignedArm = selectWeightedArm(preferred, rng);
     } else {
       const r = Math.floor(rng() * PRECISION_SCALE);
